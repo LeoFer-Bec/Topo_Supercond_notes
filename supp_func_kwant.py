@@ -277,3 +277,64 @@ def gap(params,alat,ham_str_homo):
     minimarr = np.array([gone.fun, gtwo.fun])
     return np.min(minimarr)
         
+def K_junct(info_lat, hamlist, updates, junct, sym_cons):
+    """ This function builds the tight binding model of a
+    juncttion from continuous hamiltonians provided as string variables"""
+    # INPUT
+    # leftL: float: starting point (x_i) of the lattice
+    # rightL: float: final point (x_f) of the lattice
+    # alat: float: lattice constant
+    # scat_ham: string: hamiltonian in the scattering region
+    # finite: boolean: if True (False) the lattice is finite (infinite)
+    # RETURNS
+    # syst (infisyst): the tight binding system
+    
+    alat = info_lat[0]; leftL = info_lat[1]; rightL = info_lat[2] 
+    
+    def interval_shape(x_min, x_max):
+        def shape(site):
+            return x_min <= site.pos[0] <= x_max
+
+        return shape
+
+    def shape_lead(s): return s.pos[0] >= 0
+    
+    if junct == 'NS':
+        h_right = hamlist[0]
+        for ii in range(1,len(hamlist)-1):
+            h_right = h_right+"""+"""+hamlist[ii]
+    elif junct == 'NSS':
+        h_right = hamlist[0]+"""+"""+hamlist[1]
+    else:
+        print('junction option not recognized')
+
+    h_total = hamlist[0]
+    for ii in range(1,len(hamlist)):
+        h_total = h_total+"""+"""+hamlist[ii]
+
+    nupdates = int(0.5*len(updates))
+    for ii in range(nupdates):
+        h_total = h_total.replace(updates[2*ii], updates[2*ii+1])
+    
+    syst = kwant.Builder()
+    scatt_template = kwant.continuum.discretize(h_total, 'x', grid=alat)
+    syst.fill(
+        scatt_template,
+        shape=interval_shape(leftL, rightL),
+        start=[leftL],
+    )
+            
+    left_lead = kwant.Builder(kwant.TranslationalSymmetry([-alat]))
+    template_left_lead = kwant.continuum.discretize(
+        hamlist[0], 'x', grid=alat)
+    left_lead.fill(template_left_lead, shape_lead, (0,))
+    left_lead.conservation_law = sym_cons
+    syst.attach_lead(left_lead)
+    
+    right_lead = kwant.Builder(kwant.TranslationalSymmetry([alat]))
+    template_right_lead = kwant.continuum.discretize(
+        h_right, 'x', grid=alat)
+    right_lead.fill(template_right_lead.substituted(mu_N='mu_sc'), shape_lead, (0,))
+    syst.attach_lead(right_lead)
+
+    return syst.finalized()
