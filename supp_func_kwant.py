@@ -174,30 +174,55 @@ def ph_diagram(sub, D0, polar, xlim):
     # polar: float: the value of the precessing cone angle
     # xlim: float: the max val along the x axis 'm0' 
     
-    gapless = D0/np.cos(polar*np.pi)
-        
-    lm0arr = np.linspace(0,D0,37, endpoint=False)
-    cm0arr = np.linspace(D0,gapless,37)
-    rm0arr = np.linspace(gapless,xlim,37)
-    
-    topline = xlim*np.ones(len(cm0arr))
-    cmuarr = np.sqrt(cm0arr**2-D0**2*np.ones(len(cm0arr)))
-    rmuarr = np.sqrt(rm0arr**2-D0**2*np.ones(len(rm0arr)))
-    
-    for ii in range(2):
-        sub.plot(cm0arr,cmuarr*(-1)**ii, '--b', lw=2)
-        sub.plot(rm0arr,rmuarr*(-1)**ii, '--b', lw=2)
-    
-    vertline = np.linspace(-xlim,xlim,len(lm0arr))
-    sub.plot(gapless*np.ones(len(lm0arr)),vertline, '--g', lw=2.2)
+    #gapped to gapless transition line
+    if abs(polar - 0.0) < 1e-7:
+        gapless = D0
+    else:
+        gapless = D0/(np.cos(polar*np.pi) + 1e-7)
 
-    sub.fill_between(rm0arr, rmuarr, topline, color='lime', alpha=0.5)
-    sub.fill_between(rm0arr, -rmuarr, -topline, color='lime', alpha=0.5)
-    sub.fill_between(rm0arr, -rmuarr, rmuarr, color='orange', alpha=0.5)
-    sub.fill_between(cm0arr, -cmuarr, cmuarr, color='purple', alpha=0.5)
-    sub.fill_between(cm0arr, cmuarr, topline, color='cyan', alpha=0.5)
-    sub.fill_between(cm0arr, -cmuarr, -topline, color='cyan', alpha=0.5)
-    sub.fill_between(lm0arr, -topline, topline, color='cyan', alpha=0.5)
+    vertline = np.linspace(-xlim,xlim,7)
+    sub.plot(gapless*np.ones(7),vertline, '--g', lw=2.2)
+    
+    if gapless < xlim:
+        #Splitting the interval [0, xlim] in three parts
+        left_m0arr = np.linspace(0,0.99*D0,13)
+        center_m0arr = np.linspace(D0,gapless,29)         #Constraint leading to potential bug but kept for simplicity
+        right_m0arr = np.linspace(gapless,xlim,29)        #dim of center_m0arr & dim of right_m0arr should be equal 
+    
+        topline_left = xlim*np.ones(len(left_m0arr))
+        topline_right = xlim*np.ones(len(center_m0arr))
+        #Splitting the transition line beteeen topologically nontrivial and trivial phases into two parts 
+        left_muarr = np.sqrt(center_m0arr**2-D0**2*np.ones(len(center_m0arr)))
+        right_muarr = np.sqrt(right_m0arr**2-D0**2*np.ones(len(right_m0arr)))
+
+        for ii in range(2):
+            sub.plot(center_m0arr,left_muarr*(-1)**ii, '--b', lw=2)
+            sub.plot(right_m0arr,right_muarr*(-1)**ii, '--b', lw=2)
+    
+
+        sub.fill_between(right_m0arr, right_muarr, topline_right, color='lime', alpha=0.5)
+        sub.fill_between(right_m0arr, -right_muarr, -topline_right, color='lime', alpha=0.5)
+        sub.fill_between(right_m0arr, -right_muarr, right_muarr, color='orange', alpha=0.5)
+        sub.fill_between(center_m0arr, -left_muarr, left_muarr, color='purple', alpha=0.5)
+        sub.fill_between(center_m0arr, left_muarr, topline_right, color='cyan', alpha=0.5)
+        sub.fill_between(center_m0arr, -left_muarr, -topline_right, color='cyan', alpha=0.5)
+        sub.fill_between(left_m0arr, -topline_left, topline_left, color='cyan', alpha=0.5)
+        
+    else:
+        left_m0arr = np.linspace(0,0.99*D0,13)
+        right_m0arr = np.linspace(D0,xlim,43)
+        muarr = np.sqrt(right_m0arr**2-D0**2*np.ones(len(right_m0arr)))
+        topline_left = xlim*np.ones(len(left_m0arr))
+        topline_right = xlim*np.ones(len(right_m0arr))
+
+        
+        for ii in range(2):
+            sub.plot(right_m0arr,muarr*(-1)**ii, '--b', lw=2)
+            
+        sub.fill_between(right_m0arr, -muarr, muarr, color='purple', alpha=0.5)
+        sub.fill_between(right_m0arr, muarr, topline_right, color='cyan', alpha=0.5)
+        sub.fill_between(right_m0arr, -muarr, -topline_right, color='cyan', alpha=0.5)
+        sub.fill_between(left_m0arr, -topline_left, topline_left, color='cyan', alpha=0.5)
 
     sub.set_xlim(0,xlim)
     sub.set_ylim(-xlim,xlim)
@@ -270,22 +295,27 @@ def f_Emin(params, alat, ham_str_homo, kx):
     return np.min(Evals)
 
 def gap(params,alat,ham_str_homo):
+    """ This function computes the gap of a homogeneous 
+    hamiltonian. It requires the local function f_Emin() and the 
+    function minimize_scalar() of scipy.optimize"""
     
     E_f = partial(f_Emin, params, alat, ham_str_homo)
     gone = minimize_scalar(E_f, bounds=(-1,-0.2), method='bounded')
     gtwo = minimize_scalar(E_f, bounds=(-0.2,0.2), method='bounded')
-    minimarr = np.array([gone.fun, gtwo.fun])
+    gthree = minimize_scalar(E_f, bounds=(0.2,1.0), method='bounded')
+    minimarr = np.array([gone.fun, gtwo.fun, gthree.fun])
     return np.min(minimarr)
         
 def K_junct(info_lat, hamlist, updates, junct, sym_cons):
     """ This function builds the tight binding model of a
-    juncttion from continuous hamiltonians provided as string variables"""
+    juncttion from continuous hamiltonians provided as string variables.
+    The function is a slight modification of the function K_syst()"""
     # INPUT
-    # leftL: float: starting point (x_i) of the lattice
-    # rightL: float: final point (x_f) of the lattice
-    # alat: float: lattice constant
-    # scat_ham: string: hamiltonian in the scattering region
-    # finite: boolean: if True (False) the lattice is finite (infinite)
+    # info_lat: list: [lattice spacing, (dimensions of the scattering region)] 
+    # ham_list: list: [all homogeneous terms to form the hamiltonian]
+    # updates: list: [terms to be updated (e.g homogeneous -> inhomogeneous)]
+    # juct: string: NS or NSS
+    # sym_cons: 2D array: Symmetry of the hamiltonian used to label scattering states
     # RETURNS
     # syst (infisyst): the tight binding system
     
