@@ -177,13 +177,15 @@ def ph_diagram(sub, D0, polar, xlim):
     #gapped to gapless transition line
     if abs(polar - 0.0) < 1e-7:
         gapless = D0
+        NTG_str = ' '
     else:
         gapless = D0/(np.cos(polar*np.pi) + 1e-7)
-
-    vertline = np.linspace(-xlim,xlim,7)
-    sub.plot(gapless*np.ones(7),vertline, '--g', lw=2.2)
+        NTG_str = 'NTG'
     
-    if gapless < xlim:
+    if gapless < xlim:    
+        vertline = np.linspace(-xlim,xlim,7)
+        sub.plot(gapless*np.ones(len(vertline)),vertline, '--g', lw=2.2)
+
         #Splitting the interval [0, xlim] in three parts
         left_m0arr = np.linspace(0,0.99*D0,13)
         center_m0arr = np.linspace(D0,gapless,29)         #Constraint leading to potential bug but kept for simplicity
@@ -208,6 +210,11 @@ def ph_diagram(sub, D0, polar, xlim):
         sub.fill_between(center_m0arr, -left_muarr, -topline_right, color='cyan', alpha=0.5)
         sub.fill_between(left_m0arr, -topline_left, topline_left, color='cyan', alpha=0.5)
         
+        sub.text(1.05*gapless,0.0*xlim,'NTGL', fontsize=12, color='black')
+        sub.text(1.05*gapless,0.85*xlim,'TGL', fontsize=12, color='black')
+        sub.text(0.7*gapless,-0.15*xlim,NTG_str, fontsize=12, color='black')
+
+        
     else:
         left_m0arr = np.linspace(0,0.99*D0,13)
         right_m0arr = np.linspace(D0,xlim,43)
@@ -223,13 +230,13 @@ def ph_diagram(sub, D0, polar, xlim):
         sub.fill_between(right_m0arr, muarr, topline_right, color='cyan', alpha=0.5)
         sub.fill_between(right_m0arr, -muarr, -topline_right, color='cyan', alpha=0.5)
         sub.fill_between(left_m0arr, -topline_left, topline_left, color='cyan', alpha=0.5)
+        
+        sub.text(0.7*xlim,-0.15*xlim,'NTG', fontsize=12, color='black')
+
 
     sub.set_xlim(0,xlim)
     sub.set_ylim(-xlim,xlim)
     sub.text(0.5,0.5*xlim,'TG', fontsize=12, color='black')
-    sub.text(1.05*gapless,0.0*xlim,'NTGL', fontsize=12, color='black')
-    sub.text(1.05*gapless,0.85*xlim,'TGL', fontsize=12, color='black')
-    sub.text(0.7*gapless,-0.15*xlim,'NTG', fontsize=12, color='black')
     
     return sub
 
@@ -330,10 +337,12 @@ def K_junct(info_lat, hamlist, updates, junct, sym_cons):
     def shape_lead(s): return s.pos[0] >= 0
     
     if junct == 'NS':
+        mu_right_contact = 'mu_sc'
         h_right = hamlist[0]
         for ii in range(1,len(hamlist)-1):
             h_right = h_right+"""+"""+hamlist[ii]
     elif junct == 'NSS':
+        mu_right_contact = 'mu_2'
         h_right = hamlist[0]+"""+"""+hamlist[1]
     else:
         print('junction option not recognized')
@@ -364,7 +373,29 @@ def K_junct(info_lat, hamlist, updates, junct, sym_cons):
     right_lead = kwant.Builder(kwant.TranslationalSymmetry([alat]))
     template_right_lead = kwant.continuum.discretize(
         h_right, 'x', grid=alat)
-    right_lead.fill(template_right_lead.substituted(mu_N='mu_sc'), shape_lead, (0,))
+    right_lead.fill(template_right_lead.substituted(mu_N=mu_right_contact), shape_lead, (0,))
     syst.attach_lead(right_lead)
 
     return syst.finalized()
+
+def spin_pumping(latsyst, parameters, par_arr, par_str, En):
+
+    spump_list = []
+    for par in par_arr: 
+        parameters[par_str] = par
+        
+        Smatrix = kwant.smatrix(latsyst, energy=En, params=parameters).data
+
+
+        dS_dphi = np.array([[0,-1j*Smatrix[0,1],0,-1j*Smatrix[0,3]],
+                            [1j*Smatrix[1,0],0,1j*Smatrix[1,2],0],
+                            [0,-1j*Smatrix[2,1],0,-1j*Smatrix[2,3]],
+                            [1j*Smatrix[3,0],0,1j*Smatrix[3,2],0]])
+
+
+        sz_op = np.diag([1,-1,1,-1]) 
+        prod_mtx = dS_dphi @ sz_op @ (np.conj(Smatrix[:4:,:4:].T))
+        d_sz = np.trace(prod_mtx)
+        spump_list.append(0.5*d_sz.imag)
+    
+    return np.array(spump_list)
